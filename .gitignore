@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Saved photos and downloaded model bundles are user/runtime data,
+# not source — keep the folders (via .gitkeep) but not their contents.
+captures/*.jpg
+assets/models/*.task
+assets/models/*.part
