@@ -97,6 +97,7 @@ def is_drawing_gesture(
     finger_threshold: float,
     thumb_threshold: float,
     folded_required: int,
+    require_upward: bool = True,
 ) -> bool:
     """
     Tolerant "pointing" detector: the index finger must be extended, and at
@@ -106,6 +107,11 @@ def is_drawing_gesture(
     """
     fingers = get_extended_fingers(points, finger_threshold, thumb_threshold)
     if not fingers["index"]:
+        return False
+    if require_upward and not (
+        points[INDEX_TIP][1] < points[INDEX_PIP][1]
+        and points[INDEX_TIP][1] < points[WRIST][1]
+    ):
         return False
     folded_count = sum(not fingers[name] for name in ("middle", "ring", "pinky"))
     return folded_count >= folded_required
@@ -160,14 +166,13 @@ def detect_frame_gesture(
 ) -> FrameGestureResult:
     """
     Detects the two-hand "L-frame" gesture: form an L with each hand (thumb
-    + index extended), bring them together, then pull apart to size the
-    frame —
+    + index extended). The four fingertips become a perspective-safe frame;
+    the cross-hand connectors are left-index -> right-thumb and
+    right-index -> left-thumb, matching the requested framing gesture.
 
-        left index ------------------- right index      <- top edge
-             |                              |
+        left index ------------------- right index
              |          FRAME               |
-             |                              |
-        left thumb ------------------- right thumb      <- bottom edge
+        left thumb ------------------- right thumb
 
     "Left"/"right" are determined by on-screen horizontal position (not
     MediaPipe's own handedness label), since the frame we detect on has
@@ -192,13 +197,12 @@ def detect_frame_gesture(
     if left_index[0] >= right_index[0] or left_thumb[0] >= right_thumb[0]:
         return FrameGestureResult(valid=False)
 
-    # Index fingers form the top edge, thumbs form the bottom edge
-    # (smaller y = higher on screen in image coordinates).
+    # Each hand must read as an L: index above thumb in the camera image.
     if left_index[1] >= left_thumb[1] or right_index[1] >= right_thumb[1]:
         return FrameGestureResult(valid=False)
 
-    width = abs(right_index[0] - left_index[0])
-    height = abs(left_thumb[1] - left_index[1])
+    width = max(abs(right_index[0] - left_index[0]), abs(right_thumb[0] - left_thumb[0]))
+    height = max(abs(left_thumb[1] - left_index[1]), abs(right_thumb[1] - right_index[1]))
 
     if width < min_width_ratio * frame_width:
         return FrameGestureResult(valid=False)
@@ -298,7 +302,7 @@ class FrameCountdown:
 
 # --------------------------------------------------------------------------
 # "Hold to activate" charge-up (used before air-drawing actually starts,
-# shown as a filling ring around the fingertip: "MODE GAMBAR"). Unlike
+# shown as a filling ring around the fingertip: "DRAW MODE"). Unlike
 # FrameCountdown this does not repeat — once charged it stays charged until
 # the pointing gesture is lost, and must fully recharge after that.
 # --------------------------------------------------------------------------

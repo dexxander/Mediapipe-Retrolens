@@ -15,13 +15,12 @@ retro electronic camera + experimental computer vision
 - MediaPipe hand tracking (up to 2 hands, 21-point landmarks) with a subtle
   retro landmark overlay, always on
 - A two-hand **"L" frame gesture** that puts RETROLENS into shot-composing
-  mode: form an L with each hand (thumb + index extended), bring them
-  together, then pull apart to size a frame. While that frame is held, the
-  retro face effect, its glowing box, and the head-pose readout are all
-  active — drop your hands and it's back to the plain live feed. It's a
-  deliberate "compose the shot" mode, not a permanent filter.
+  mode: form an L with each hand (thumb + index extended), then use the four
+  fingertips as the frame corners. Cross-hand guides connect left index to
+  right thumb and right index to left thumb. Release either hand and the
+  retro effect stops immediately.
 - Three retro treatments applied inside that frame: **MONO** (CLAHE
-  monochrome), **KONTRAS** (punchy LUT-based contrast), **FILM** (grain,
+  monochrome), **CONTRAST** (punchy LUT-based contrast), **FILM** (grain,
   flicker, scanlines, vignette)
 - 3-second countdown with automatic photo capture — hold the frame through
   a capture and it keeps shooting again every 3 seconds for as long as you
@@ -29,8 +28,8 @@ retro electronic camera + experimental computer vision
   "get ready" cue
 - Real-time head pose estimation (ROLL / PITCH / YAW) via `solvePnP`,
   shown while the frame is held
-- Air drawing: point your index finger and hold it — a small ring fills in
-  around your fingertip ("MODE GAMBAR"), and once it completes, a glowing
+- Air drawing: point your index finger straight upward for three seconds — a
+  small ring fills in around your fingertip ("DRAW MODE"), and once it completes, a glowing
   neon trail follows your finger with a bright hot-tip. The trail stays on
   screen until you clear it.
 - Retro glitch-style HUD: REC indicator, timestamp, FPS, mode, photo
@@ -88,7 +87,7 @@ model..." in the console while it fetches the hand and face models
 | `ESC` | Quit                                        |
 | `C`   | Clear the air-drawing canvas                |
 | `M`   | Switch to MONO face effect                  |
-| `K`   | Switch to KONTRAS face effect               |
+| `K`   | Switch to CONTRAST face effect               |
 | `F`   | Switch to FILM face effect                  |
 | `D`   | Toggle the debug overlay                    |
 | `R`   | Reset gesture / drawing / pose state        |
@@ -99,33 +98,29 @@ pressing `ESC`.
 
 ## Gestures
 
-**"L" frame → automatic photo**
+**Both hands in an L → retro frame and automatic photo**
 
 ```
-BENTUK 'L' DUA TANGAN, SATUKAN, LALU TARIK
-(form an 'L' with both hands, bring together, then pull apart)
-
-left index ------------------- right index      <- top edge
-     |                              |
+left index ------------------- right index
      |            FRAME             |
-     |                              |
-left thumb ------------------- right thumb      <- bottom edge
+left thumb ------------------- right thumb
 ```
 
-Form an L-shape with each hand — thumb and index extended, other fingers
-folded — then hold both hands up so your index fingers form the top
-corners and your thumbs form the bottom corners of a frame. Hold it steady
-for 3 seconds: the frame lights up amber with corner markers, a countdown
+Form an L-shape with each hand: extend the thumb and index while folding the
+other fingers. Place the left hand on the left side of the screen and the
+right hand on the right. The app draws the four-corner frame and the two
+cross-hand connections (left index → right thumb, right index → left thumb).
+Hold it steady for 3 seconds: the frame lights up amber with corner markers, a countdown
 (3, 2, 1) counts down inside it turning magenta on the final second, and a
 photo is captured with a flash. Keep holding and it fires again every 3
 seconds; drop the gesture and the countdown cancels — nothing is saved.
 
-**Index-finger air drawing**
+**Index finger pointing upward → drawing mode**
 
-Extend just your index finger (other fingers folded) and hold still for
-a moment — a ring fills in around your fingertip. Once it completes, move
-your finger and a glowing neon trail follows it. Lift the gesture and the
-trail stays put; press `C` (or `R`) to clear it.
+Extend just your index finger, point it straight upward, and hold it still
+for 3 seconds. The ring must fill completely before drawing activates. Then
+move your index finger to draw a glowing neon trail. Stop pointing to lift
+the pen; the trail stays on screen. Press `C` (or `R`) to clear it.
 
 ## Photos
 
@@ -135,15 +130,16 @@ existing photos are never overwritten.
 
 ## Configuration
 
-Every tunable value — camera index and resolution, detection confidence
+Every tunable value — camera index and resolution, tracking resolution, detection confidence
 thresholds, gesture sensitivity, drawing smoothing, effect strength, HUD
 colors, and more — lives in `config.py`. Nothing else in the codebase
 hard-codes these values, so it's a good first stop for tweaking the feel of
 the app.
 
-If your webcam isn't device `0`, change `CAMERA_INDEX` in `config.py`. If
-the app feels sluggish on your machine, try lowering `FRAME_WIDTH` /
-`FRAME_HEIGHT`.
+If your webcam isn't device `0`, change `CAMERA_INDEX` in `config.py`. The
+preview remains at `FRAME_WIDTH` / `FRAME_HEIGHT`, while MediaPipe uses
+`TRACKING_WIDTH` / `TRACKING_HEIGHT` for faster detection. Lower the tracking
+resolution first if the app feels sluggish.
 
 ## Project structure
 
@@ -156,7 +152,7 @@ retrolens/
 ├── face_tracker.py       MediaPipe face landmarks + bounding box
 ├── pose_estimator.py     head pose (roll/pitch/yaw) via solvePnP
 ├── gesture_detector.py   finger-extension, L-shape, frame gesture, countdown
-├── effects.py             MONO / KONTRAS / FILM treatments (abu/ke_bgr/m_*)
+├── effects.py             MONO / CONTRAST / FILM treatments
 ├── drawing.py             air-drawing canvas + neon glow compositing
 ├── capture.py             photo saving, numbering, flash state
 ├── ui.py                  HUD rendering (glitch text, gesture box, HUD...)

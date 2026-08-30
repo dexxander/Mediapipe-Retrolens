@@ -2,11 +2,11 @@
 effects.py
 ==========
 The three retro face treatments applied to the face ROI only — never the
-whole frame. Function names (abu / ke_bgr / m_mono / m_kontras / m_film)
-match the app's own internal vocabulary on purpose.
+whole frame. These stages stay separate so the live render loop can reuse
+cached work.
 
-    abu       -> BGR to grayscale ("abu-abu" = grey)
-    ke_bgr    -> grayscale back to 3-channel BGR ("ke bgr" = to BGR)
+    abu       -> BGR to grayscale
+    ke_bgr    -> grayscale back to 3-channel BGR
     m_mono    -> CLAHE-enhanced monochrome
     m_kontras -> punchy S-curve contrast via a LUT
     m_film    -> desaturated + grain + flicker + scanlines/vignette
@@ -27,7 +27,7 @@ import numpy as np
 import config
 
 MODE_MONO = "MONO"
-MODE_KONTRAS = "KONTRAS"
+MODE_KONTRAS = "CONTRAST"
 MODE_FILM = "FILM"
 
 _clahe = cv2.createCLAHE(
@@ -55,7 +55,7 @@ def m_mono(roi: np.ndarray, t: float) -> np.ndarray:
 
 
 # --------------------------------------------------------------------------
-# KONTRAS (LUT-based S-curve contrast)
+# CONTRAST (LUT-based S-curve contrast)
 # --------------------------------------------------------------------------
 _kontras_lut_cache: Dict[float, np.ndarray] = {}
 
@@ -66,7 +66,7 @@ def _build_contrast_lut(intensity: float) -> np.ndarray:
     return np.clip(curve, 0, 255).astype(np.uint8)
 
 
-def m_kontras(roi: np.ndarray, t: float, intensity: float = config.KONTRAS_INTENSITY) -> np.ndarray:
+def m_kontras(roi: np.ndarray, t: float, intensity: float = config.CONTRAST_INTENSITY) -> np.ndarray:
     """Dramatic S-curve contrast, applied via a cached lookup table."""
     gray = abu(roi)
     gray = _clahe.apply(gray)

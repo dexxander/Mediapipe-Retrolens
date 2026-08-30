@@ -162,10 +162,15 @@ def draw_gesture_box(
     bl = (int(bottom_left[0]), int(bottom_left[1]))
     br = (int(bottom_right[0]), int(bottom_right[1]))
 
-    # thin cyan outline, full quadrilateral (may be a touch non-rectangular -
+    # Thin cyan outline, full quadrilateral (may be a touch non-rectangular -
     # it follows the actual hand-tracked corners, not a forced-square box)
     for p1, p2 in ((tl, tr), (tr, br), (br, bl), (bl, tl)):
         cv2.line(frame, p1, p2, cyan_color, 1, cv2.LINE_AA)
+
+    # Requested cross-hand connections: left index -> right thumb and
+    # right index -> left thumb. They make the framing relationship obvious.
+    cv2.line(frame, tl, br, cyan_color, 1, cv2.LINE_AA)
+    cv2.line(frame, tr, bl, cyan_color, 1, cv2.LINE_AA)
 
     # thick accent bars on the left and right edges, full height
     cv2.line(frame, tl, bl, accent_color, 3, cv2.LINE_AA)
@@ -200,7 +205,7 @@ def draw_countdown_number(
 
 
 # --------------------------------------------------------------------------
-# Draw-mode "hold to activate" ring + MODE GAMBAR label
+# Draw-mode "hold to activate" ring + DRAW MODE label
 # --------------------------------------------------------------------------
 def draw_charge_ring(
     frame: np.ndarray,
@@ -213,7 +218,7 @@ def draw_charge_ring(
     cv2.circle(frame, center, radius, (60, 60, 60), 2, cv2.LINE_AA)
     sweep = max(1, int(360 * max(0.0, min(1.0, progress))))
     cv2.ellipse(frame, center, (radius, radius), -90, 0, sweep, color, 3, cv2.LINE_AA)
-    label = "MODE GAMBAR"
+    label = "DRAW MODE"
     tw = _text_width(label, 0.5, 1)
     _glitch_text(frame, label, (center[0] - tw // 2, center[1] - radius - 12), 0.5, text_color, 1)
 

@@ -23,6 +23,10 @@ MODELS_DIR = PROJECT_ROOT / "assets" / "models"
 CAMERA_INDEX = 0
 FRAME_WIDTH = 1280
 FRAME_HEIGHT = 720
+# MediaPipe can work on a smaller copy while the camera preview stays sharp.
+# This is the main performance knob for lower-powered CPUs.
+TRACKING_WIDTH = 640
+TRACKING_HEIGHT = 360
 
 # --------------------------------------------------------------------------
 # MediaPipe — hands
@@ -49,7 +53,7 @@ MIN_ROI_SIZE = 24               # px — below this we skip processing entirely
 CLAHE_CLIP_LIMIT = 2.5
 CLAHE_GRID_SIZE = (8, 8)
 
-KONTRAS_INTENSITY = 1.6         # steepness of the contrast S-curve
+CONTRAST_INTENSITY = 1.6        # steepness of the contrast S-curve
 GRAIN_STRENGTH = 11             # std-dev of film grain noise (0-255 scale)
 GRAIN_FRAME_RATE = 18.0         # how many grain "frames" cycle per second
 FILM_SCANLINES = True           # scanlines drawn only inside FILM face ROI
@@ -77,7 +81,7 @@ COUNTDOWN_SECONDS = 3.0
 GESTURE_MISS_TOLERANCE_FRAMES = 5     # brief dropout grace before cancelling
 COUNTDOWN_FINAL_SECOND = 1.0          # remaining <= this -> box/number turn magenta
 
-DRAW_CHARGE_SECONDS = 0.6       # how long to hold the pointing pose before drawing activates
+DRAW_CHARGE_SECONDS = 3.0       # hold the upward-pointing index for 3 seconds to activate drawing
 
 # --------------------------------------------------------------------------
 # Air drawing
@@ -99,12 +103,12 @@ BURN_IN_TIMESTAMP = True        # stamp saved photos with date/time
 # --------------------------------------------------------------------------
 # UI / HUD
 # --------------------------------------------------------------------------
-HUD_LABEL_IDLE = "LENSA"        # main status label before any drawing exists
-HUD_LABEL_DRAWING = "GAMBAR"    # main status label once the canvas has content
+HUD_LABEL_IDLE = "LENS"         # main status label before any drawing exists
+HUD_LABEL_DRAWING = "DRAW"      # main status label once the canvas has content
 FPS_SMOOTHING = 0.9
 DEBUG_DEFAULT = False
 
-HINT_TEXT = "BENTUK 'L' DUA TANGAN, SATUKAN, LALU TARIK"
+HINT_TEXT = "FORM AN L WITH BOTH HANDS TO FRAME A SHOT"
 
 ACCENT_COLOR = (0, 165, 255)        # amber/orange, BGR - gesture box, pose readout, ROI label
 FINAL_SECOND_COLOR = (180, 20, 255)  # magenta/pink, BGR - final countdown second

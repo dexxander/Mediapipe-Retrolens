@@ -89,7 +89,7 @@ def _build_debug_lines(
         f"Frame Gesture: {'TRUE' if gesture_valid else 'false'}",
         f"Countdown: {countdown_remaining:.1f}" if countdown_remaining is not None else "Countdown: --",
         f"Draw pose: {'yes' if drawing_hand_present else 'no'}  charge: {charge_progress:.2f}",
-        f"Drawing: {'ON' if drawing_active else 'off'}  Goresan: {stroke_count}",
+        f"Drawing: {'ON' if drawing_active else 'off'}  Strokes: {stroke_count}",
         f"Roll: {roll:.1f}" if roll is not None else "Roll: --",
         f"Pitch: {pitch:.1f}" if pitch is not None else "Pitch: --",
         f"Yaw: {yaw:.1f}" if yaw is not None else "Yaw: --",
@@ -240,12 +240,18 @@ def _process_frame(
     height, width = frame.shape[:2]
     drawing_canvas.resize(width, height)
 
-    frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+    # Run tracking on a smaller RGB copy. The full-resolution frame remains
+    # untouched for display and effects, which substantially reduces CPU cost.
+    tracking_width = min(width, config.TRACKING_WIDTH)
+    tracking_height = min(height, config.TRACKING_HEIGHT)
+    tracking_frame = frame if (tracking_width, tracking_height) == (width, height) else cv2.resize(
+        frame, (tracking_width, tracking_height), interpolation=cv2.INTER_AREA
+    )
+    frame_rgb = cv2.cvtColor(tracking_frame, cv2.COLOR_BGR2RGB)
     hand_result = hand_tracker.process(frame_rgb, t)
-    face_result = face_tracker.process(frame_rgb, t)
-
-    hands_px = hand_tracker.get_landmarks_px(hand_result, width, height)
-    face_landmarks_px = face_tracker.get_landmarks_px(face_result, width, height)
+    hands_small = hand_tracker.get_landmarks_px(hand_result, tracking_width, tracking_height)
+    scale_x, scale_y = width / tracking_width, height / tracking_height
+    hands_px = [[(x * scale_x, y * scale_y) for x, y in hand] for hand in hands_small]
 
     # --- Two-hand "L" frame gesture + countdown ---------------------------
     gesture_result = detect_frame_gesture(
@@ -258,6 +264,15 @@ def _process_frame(
     countdown_running = remaining is not None
     is_final_second = countdown_running and remaining <= config.COUNTDOWN_FINAL_SECOND
     accent_color = config.FINAL_SECOND_COLOR if is_final_second else config.ACCENT_COLOR
+
+    # Face tracking is only needed while a valid frame is held. Avoiding this
+    # model on idle frames is the second major CPU saving.
+    face_landmarks_px = None
+    if gesture_result.valid:
+        face_result = face_tracker.process(frame_rgb, t)
+        face_small = face_tracker.get_landmarks_px(face_result, tracking_width, tracking_height)
+        if face_small:
+            face_landmarks_px = [(x * scale_x, y * scale_y) for x, y in face_small]
 
     # --- Head pose: only computed/shown while composing a shot ------------
     roll = pitch = yaw = None
@@ -277,17 +292,34 @@ def _process_frame(
         if (gx2 - gx1) > config.MIN_ROI_SIZE and (gy2 - gy1) > config.MIN_ROI_SIZE:
             roi = frame[gy1:gy2, gx1:gx2]
             if roi.size > 0:
-                frame[gy1:gy2, gx1:gx2] = apply_effect(roi, mode, t)
+                filtered = apply_effect(roi, mode, t)
+                polygon = np.array([
+                    [int(p[0] - gx1), int(p[1] - gy1)] for p in (
+                        gesture_result.top_left, gesture_result.top_right,
+                        gesture_result.bottom_right, gesture_result.bottom_left,
+                    )
+                ], dtype=np.int32)
+                mask = np.zeros(roi.shape[:2], dtype=np.uint8)
+                cv2.fillPoly(mask, [polygon], 255)
+                frame[gy1:gy2, gx1:gx2] = np.where(mask[..., None] > 0, filtered, roi)
 
     # --- Hand landmark visualization ---------------------------------------
     hand_tracker.draw_landmarks(frame, hands_px)
 
     # --- Air drawing: hold-to-charge, then a live neon trail ---------------
     drawing_hand = None
-    for hand in hands_px:
-        if is_drawing_gesture(hand, config.FINGER_EXTENSION_THRESHOLD, config.THUMB_EXTENSION_THRESHOLD, config.DRAWING_FOLDED_FINGERS_REQUIRED):
-            drawing_hand = hand
-            break
+    # Keep the frame and drawing modes mutually exclusive. An L-shaped hand
+    # also has an extended index, so it must not start the drawing timer.
+    if not gesture_result.valid:
+        for hand in hands_px:
+            if is_drawing_gesture(
+                hand,
+                config.FINGER_EXTENSION_THRESHOLD,
+                config.THUMB_EXTENSION_THRESHOLD,
+                config.DRAWING_FOLDED_FINGERS_REQUIRED,
+            ):
+                drawing_hand = hand
+                break
 
     charge_progress = draw_charge.update(drawing_hand is not None, t)
     drawing_active = draw_charge.charged and drawing_hand is not None
@@ -350,8 +382,8 @@ def _process_frame(
     secondary_line = None
     if not countdown_running:
         if drawing_hand is not None:
-            state_word = "GAMBAR" if drawing_active else "SIAP"
-            secondary_line = f"{state_word}  GORESAN {drawing_canvas.stroke_count}"
+            state_word = "DRAWING" if drawing_active else "READY"
+            secondary_line = f"{state_word}  STROKES {drawing_canvas.stroke_count}"
         else:
             secondary_line = config.HINT_TEXT
     ui.draw_bottom_left(frame, main_label, mode, fps, photo_capture.count, secondary_line, config.TEXT_COLOR)

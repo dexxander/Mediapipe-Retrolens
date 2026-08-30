@@ -37,7 +37,7 @@ class DrawingCanvas:
         self.layer = np.zeros((height, width, 3), dtype=np.uint8)
         self._previous_point: Optional[Tuple[int, int]] = None
         self._smoothed_point: Optional[Point] = None
-        self.stroke_count = 0  # "GORESAN" - running count of segments drawn since the last clear
+        self.stroke_count = 0  # Running count of segments drawn since the last clear.
 
     def resize(self, width: int, height: int) -> None:
         """Reallocate (and clear) the canvas if the camera resolution changes."""
