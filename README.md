@@ -16,9 +16,9 @@ retro electronic camera + experimental computer vision
   retro landmark overlay, always on
 - A two-hand **"L" frame gesture** that puts RETROLENS into shot-composing
   mode: form an L with each hand (thumb + index extended), then use the four
-  fingertips as the frame corners. Cross-hand guides connect left index to
-  right thumb and right index to left thumb. Release either hand and the
-  retro effect stops immediately.
+  fingertips as the frame corners. It accepts either mirrored arrangement:
+  left index to right thumb on top with left thumb to right index on bottom,
+  or the reverse. Release either hand and the retro effect stops immediately.
 - Three retro treatments applied inside that frame: **MONO** (CLAHE
   monochrome), **CONTRAST** (punchy LUT-based contrast), **FILM** (grain,
   flicker, scanlines, vignette)
@@ -101,16 +101,15 @@ pressing `ESC`.
 **Both hands in an L → retro frame and automatic photo**
 
 ```
-left index ------------------- right index
-     |            FRAME             |
-left thumb ------------------- right thumb
+left index ------------------- right thumb       OR       left thumb ------------------- right index
+     |            FRAME             |                      |            FRAME             |
+left thumb ------------------- right index                left index ------------------- right thumb
 ```
 
 Form an L-shape with each hand: extend the thumb and index while folding the
 other fingers. Place the left hand on the left side of the screen and the
-right hand on the right. The app draws the four-corner frame and the two
-cross-hand connections (left index → right thumb, right index → left thumb).
-Hold it steady for 3 seconds: the frame lights up amber with corner markers, a countdown
+right hand on the right. The higher fingertip on each side forms the top edge,
+so both mirrored layouts above work. Hold it steady for 3 seconds: the frame lights up amber with corner markers, a countdown
 (3, 2, 1) counts down inside it turning magenta on the final second, and a
 photo is captured with a flash. Keep holding and it fires again every 3
 seconds; drop the gesture and the countdown cancels — nothing is saved.

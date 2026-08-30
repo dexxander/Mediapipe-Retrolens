@@ -166,13 +166,15 @@ def detect_frame_gesture(
 ) -> FrameGestureResult:
     """
     Detects the two-hand "L-frame" gesture: form an L with each hand (thumb
-    + index extended). The four fingertips become a perspective-safe frame;
-    the cross-hand connectors are left-index -> right-thumb and
-    right-index -> left-thumb, matching the requested framing gesture.
+    + index extended). The four fingertips become a perspective-safe frame.
+    Both mirrored arrangements are accepted: the higher fingertip on each
+    side forms the top edge, and the lower fingertip forms the bottom edge.
 
-        left index ------------------- right index
+        left index ------------------- right thumb       OR
+        left thumb ------------------- right index
              |          FRAME               |
-        left thumb ------------------- right thumb
+        left thumb ------------------- right index       OR
+        left index ------------------- right thumb
 
     "Left"/"right" are determined by on-screen horizontal position (not
     MediaPipe's own handedness label), since the frame we detect on has
@@ -193,16 +195,17 @@ def detect_frame_gesture(
     right_index = right_hand[INDEX_TIP]
     right_thumb = right_hand[THUMB_TIP]
 
-    # Left hand must actually be to the left of the right hand.
-    if left_index[0] >= right_index[0] or left_thumb[0] >= right_thumb[0]:
+    # Accept either mirrored orientation. On each side, the higher fingertip
+    # is the top corner and the lower fingertip is the bottom corner.
+    left_top, left_bottom = sorted((left_index, left_thumb), key=lambda p: p[1])
+    right_top, right_bottom = sorted((right_index, right_thumb), key=lambda p: p[1])
+
+    # The left hand must remain left of the right hand at both edges.
+    if left_top[0] >= right_top[0] or left_bottom[0] >= right_bottom[0]:
         return FrameGestureResult(valid=False)
 
-    # Each hand must read as an L: index above thumb in the camera image.
-    if left_index[1] >= left_thumb[1] or right_index[1] >= right_thumb[1]:
-        return FrameGestureResult(valid=False)
-
-    width = max(abs(right_index[0] - left_index[0]), abs(right_thumb[0] - left_thumb[0]))
-    height = max(abs(left_thumb[1] - left_index[1]), abs(right_thumb[1] - right_index[1]))
+    width = (abs(right_top[0] - left_top[0]) + abs(right_bottom[0] - left_bottom[0])) / 2.0
+    height = (abs(left_bottom[1] - left_top[1]) + abs(right_bottom[1] - right_top[1])) / 2.0
 
     if width < min_width_ratio * frame_width:
         return FrameGestureResult(valid=False)
@@ -215,10 +218,10 @@ def detect_frame_gesture(
 
     return FrameGestureResult(
         valid=True,
-        top_left=left_index,
-        top_right=right_index,
-        bottom_left=left_thumb,
-        bottom_right=right_thumb,
+        top_left=left_top,
+        top_right=right_top,
+        bottom_left=left_bottom,
+        bottom_right=right_bottom,
         width=width,
         height=height,
     )

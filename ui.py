@@ -167,11 +167,6 @@ def draw_gesture_box(
     for p1, p2 in ((tl, tr), (tr, br), (br, bl), (bl, tl)):
         cv2.line(frame, p1, p2, cyan_color, 1, cv2.LINE_AA)
 
-    # Requested cross-hand connections: left index -> right thumb and
-    # right index -> left thumb. They make the framing relationship obvious.
-    cv2.line(frame, tl, br, cyan_color, 1, cv2.LINE_AA)
-    cv2.line(frame, tr, bl, cyan_color, 1, cv2.LINE_AA)
-
     # thick accent bars on the left and right edges, full height
     cv2.line(frame, tl, bl, accent_color, 3, cv2.LINE_AA)
     cv2.line(frame, tr, br, accent_color, 3, cv2.LINE_AA)
