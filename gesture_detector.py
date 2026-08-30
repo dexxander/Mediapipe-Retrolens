@@ -112,6 +112,24 @@ def is_drawing_gesture(
 
 
 # --------------------------------------------------------------------------
+# "L" shape: thumb + index extended (perpendicular, like an L), the rest
+# folded. Each hand must form this shape for the two-hand frame gesture.
+# --------------------------------------------------------------------------
+def is_l_shape(
+    points: Sequence[Point],
+    finger_threshold: float,
+    thumb_threshold: float,
+    folded_required: int = 2,
+) -> bool:
+    """True if thumb and index are both extended and at least `folded_required` of {middle, ring, pinky} are folded."""
+    fingers = get_extended_fingers(points, finger_threshold, thumb_threshold)
+    if not (fingers["thumb"] and fingers["index"]):
+        return False
+    folded_count = sum(not fingers[name] for name in ("middle", "ring", "pinky"))
+    return folded_count >= folded_required
+
+
+# --------------------------------------------------------------------------
 # Two-hand framing gesture
 # --------------------------------------------------------------------------
 @dataclass
@@ -137,9 +155,13 @@ def detect_frame_gesture(
     min_height_ratio: float,
     min_aspect: float,
     max_aspect: float,
+    finger_threshold: float,
+    thumb_threshold: float,
 ) -> FrameGestureResult:
     """
-    Detects the two-hand "photo frame" gesture:
+    Detects the two-hand "L-frame" gesture: form an L with each hand (thumb
+    + index extended), bring them together, then pull apart to size the
+    frame —
 
         left index ------------------- right index      <- top edge
              |                              |
@@ -153,6 +175,9 @@ def detect_frame_gesture(
     further left on screen *is* the left hand as the user perceives it.
     """
     if len(hands_points) != 2:
+        return FrameGestureResult(valid=False)
+
+    if not all(is_l_shape(hand, finger_threshold, thumb_threshold) for hand in hands_points):
         return FrameGestureResult(valid=False)
 
     ordered = sorted(hands_points, key=_hand_center_x)
@@ -205,22 +230,16 @@ class FrameCountdown:
     A short "miss tolerance" absorbs the odd single-frame tracking dropout
     (completely normal with real-time hand tracking) without restarting the
     countdown from scratch — but a genuine, sustained drop of the gesture
-    still cancels it, exactly as requested.
+    still cancels it, exactly as requested. Holding the gesture continuously
+    through and past a capture starts the next countdown immediately —
+    holding the frame is a deliberate "keep shooting" burst, one capture per
+    `duration` seconds for as long as it's held.
 
-    Two extra robustness details, beyond the base "hold -> countdown ->
-    capture" behavior:
-
-      * After a successful capture, a *new* countdown only arms once the
-        gesture has actually been released and re-formed. Without this, a
-        user who simply keeps holding the pose after the flash would
-        trigger another capture every `duration` seconds — a surprising
-        rapid-fire burst nobody asked for. One hold should mean one photo.
-
-      * Elapsed time accumulates from small per-frame deltas, clamped to a
-        sane maximum, rather than a raw `now - start_time` difference. A
-        stalled process (a dropped frame, the OS pausing the window) could
-        otherwise make a multi-second gap look like "held continuously",
-        firing a phantom instant capture the moment tracking resumes.
+    Elapsed time accumulates from small per-frame deltas, clamped to a sane
+    maximum, rather than a raw `now - start_time` difference. A stalled
+    process (a dropped frame, the OS pausing the window) could otherwise
+    make a multi-second gap look like "held continuously", firing a phantom
+    instant capture the moment tracking resumes.
     """
 
     _MAX_FRAME_DT = 0.25  # seconds; caps the damage a single stall can do
@@ -232,7 +251,6 @@ class FrameCountdown:
         self._elapsed = 0.0
         self._last_time: Optional[float] = None
         self._miss_streak = 0
-        self._awaiting_release = False  # True right after a capture, until the gesture drops
         self.triggered = False  # True for exactly one update() call, when it completes
 
     def reset(self) -> None:
@@ -240,7 +258,6 @@ class FrameCountdown:
         self._elapsed = 0.0
         self._last_time = None
         self._miss_streak = 0
-        self._awaiting_release = False
         self.triggered = False
 
     def update(self, gesture_valid: bool, now: float) -> Optional[float]:
@@ -250,11 +267,6 @@ class FrameCountdown:
         one frame on which the countdown completes.
         """
         self.triggered = False
-
-        if self._awaiting_release:
-            if gesture_valid:
-                return None  # still holding from the last capture - wait for a drop
-            self._awaiting_release = False
 
         if gesture_valid:
             self._miss_streak = 0
@@ -279,8 +291,48 @@ class FrameCountdown:
         remaining = self.duration - self._elapsed
         if remaining <= 0:
             self.triggered = True
-            self.active = False
-            self._awaiting_release = True
-            self._last_time = None
+            self._elapsed = 0.0  # immediately starts counting the next cycle if still held
             return 0.0
         return remaining
+
+
+# --------------------------------------------------------------------------
+# "Hold to activate" charge-up (used before air-drawing actually starts,
+# shown as a filling ring around the fingertip: "MODE GAMBAR"). Unlike
+# FrameCountdown this does not repeat — once charged it stays charged until
+# the pointing gesture is lost, and must fully recharge after that.
+# --------------------------------------------------------------------------
+class HoldCharge:
+    _MAX_FRAME_DT = 0.25
+
+    def __init__(self, duration: float) -> None:
+        self.duration = duration
+        self._elapsed = 0.0
+        self._last_time: Optional[float] = None
+        self.charged = False
+
+    def reset(self) -> None:
+        self._elapsed = 0.0
+        self._last_time = None
+        self.charged = False
+
+    def update(self, held: bool, now: float) -> float:
+        """
+        Call once per frame with whether the activating pose is currently
+        held. Returns progress in [0, 1] (0 when not held / just reset,
+        1 once fully charged). Stays at 1 (self.charged stays True) for as
+        long as `held` remains True, so the drawing doesn't stutter off for
+        a single missed frame right at the charge boundary.
+        """
+        if not held:
+            self.reset()
+            return 0.0
+
+        dt = 0.0 if self._last_time is None else max(0.0, min(now - self._last_time, self._MAX_FRAME_DT))
+        self._last_time = now
+        self._elapsed = min(self.duration, self._elapsed + dt)
+
+        progress = 1.0 if self.duration <= 0 else self._elapsed / self.duration
+        if progress >= 1.0:
+            self.charged = True
+        return min(1.0, progress)

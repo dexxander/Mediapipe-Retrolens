@@ -50,11 +50,8 @@ def ke_bgr(gray: np.ndarray) -> np.ndarray:
 # MONO
 # --------------------------------------------------------------------------
 def m_mono(roi: np.ndarray, t: float) -> np.ndarray:
-    """CLAHE-enhanced monochrome — visible detail, not blown-out black/white."""
-    gray = abu(roi)
-    gray = _clahe.apply(gray)
-    gray = cv2.convertScaleAbs(gray, alpha=1.05, beta=3)  # subtle contrast lift
-    return ke_bgr(gray)
+    """CLAHE-enhanced monochrome."""
+    return ke_bgr(_clahe.apply(abu(roi)))
 
 
 # --------------------------------------------------------------------------
@@ -84,7 +81,7 @@ def m_kontras(roi: np.ndarray, t: float, intensity: float = config.KONTRAS_INTEN
 # --------------------------------------------------------------------------
 # FILM (grain + flicker + optional scanlines/vignette)
 # --------------------------------------------------------------------------
-_GRAIN_FRAMES = 10  # small pool of pre-generated grain frames, cycled by time
+_GRAIN_FRAMES = 6  # small pool of pre-generated grain frames, cycled by time
 _grain_cache: Dict[Tuple[int, int, int], np.ndarray] = {}
 
 
@@ -99,7 +96,9 @@ def _get_grain_stack(h: int, w: int, strength: int, seed: int = 7) -> np.ndarray
     stack = _grain_cache.get(key)
     if stack is None:
         rng = np.random.default_rng(seed)
-        stack = rng.normal(0.0, strength, size=(_GRAIN_FRAMES, h, w)).astype(np.float32)
+        stack = np.stack(
+            [rng.normal(0, strength, (h, w)).astype(np.int16) for _ in range(_GRAIN_FRAMES)]
+        )
         _grain_cache[key] = stack
     return stack
 

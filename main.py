@@ -13,6 +13,7 @@ webcam. See README.md for controls and gestures.
 
 from __future__ import annotations
 
+import math
 import sys
 import time
 from typing import List, Optional
@@ -30,12 +31,13 @@ from face_tracker import FaceTracker
 from gesture_detector import (
     INDEX_TIP,
     FrameCountdown,
+    HoldCharge,
     detect_frame_gesture,
     is_drawing_gesture,
 )
 from hand_tracker import HandTracker
 from pose_estimator import HeadPoseEstimator
-from utils import FPSCounter
+from utils import FPSCounter, clamp_point
 
 WINDOW_TITLE = "RETROLENS"
 
@@ -68,24 +70,26 @@ def show_startup_error(message: str) -> None:
 
 def _build_debug_lines(
     hands_count: int,
-    face_detected: bool,
     fps: float,
     mode: str,
-    drawing_active: bool,
-    frame_gesture_valid: bool,
+    gesture_valid: bool,
     countdown_remaining: Optional[float],
+    drawing_hand_present: bool,
+    charge_progress: float,
+    drawing_active: bool,
+    stroke_count: int,
     roll: Optional[float],
     pitch: Optional[float],
     yaw: Optional[float],
 ) -> List[str]:
     return [
         f"Hands: {hands_count}",
-        f"Face: {'detected' if face_detected else 'none'}",
         f"FPS: {fps:.0f}",
         f"Mode: {mode}",
-        f"Drawing: {'ON' if drawing_active else 'off'}",
-        f"Frame Gesture: {'TRUE' if frame_gesture_valid else 'false'}",
+        f"Frame Gesture: {'TRUE' if gesture_valid else 'false'}",
         f"Countdown: {countdown_remaining:.1f}" if countdown_remaining is not None else "Countdown: --",
+        f"Draw pose: {'yes' if drawing_hand_present else 'no'}  charge: {charge_progress:.2f}",
+        f"Drawing: {'ON' if drawing_active else 'off'}  Goresan: {stroke_count}",
         f"Roll: {roll:.1f}" if roll is not None else "Roll: --",
         f"Pitch: {pitch:.1f}" if pitch is not None else "Pitch: --",
         f"Yaw: {yaw:.1f}" if yaw is not None else "Yaw: --",
@@ -134,11 +138,12 @@ def main() -> None:
         sys.exit(1)
 
     pose_estimator = HeadPoseEstimator(config.POSE_SMOOTHING_ALPHA, config.POSE_MAX_DEGREES)
-    photo_capture = PhotoCapture(config.CAPTURES_DIR, config.FLASH_DURATION_FRAMES, config.CAPTURE_HOLD_FRAMES)
+    photo_capture = PhotoCapture(config.CAPTURES_DIR, config.FLASH_DURATION_FRAMES, config.CAPTURE_TEXT_FRAMES)
     drawing_canvas = DrawingCanvas(
         camera.width, camera.height, config.DRAWING_COLOR, config.DRAWING_THICKNESS, config.DRAWING_SMOOTHING
     )
     countdown = FrameCountdown(config.COUNTDOWN_SECONDS, config.GESTURE_MISS_TOLERANCE_FRAMES)
+    draw_charge = HoldCharge(config.DRAW_CHARGE_SECONDS)
     fps_counter = FPSCounter(config.FPS_SMOOTHING)
 
     mode = MODE_MONO
@@ -166,6 +171,7 @@ def main() -> None:
                     photo_capture=photo_capture,
                     drawing_canvas=drawing_canvas,
                     countdown=countdown,
+                    draw_charge=draw_charge,
                 )
             except Exception as exc:  # noqa: BLE001 - keep the live session alive across a bad frame
                 print(f"[RETROLENS] Frame error (continuing): {exc}")
@@ -189,6 +195,7 @@ def main() -> None:
             elif key in (ord("r"), ord("R")):
                 drawing_canvas.clear()
                 countdown.reset()
+                draw_charge.reset()
                 pose_estimator.reset()
             elif key in (ord("s"), ord("S")):
                 saved = photo_capture.save(ui.stamp_photo_timestamp(frame.copy(), config.WARN_COLOR))
@@ -217,8 +224,19 @@ def _process_frame(
     photo_capture: PhotoCapture,
     drawing_canvas: DrawingCanvas,
     countdown: FrameCountdown,
+    draw_charge: HoldCharge,
 ) -> np.ndarray:
-    """One full pass: detect -> effect -> draw -> gesture -> HUD. Returns the frame to display."""
+    """
+    One full pass: detect hands/face -> two-hand frame gesture (which
+    drives the retro effect + pose readout + countdown) -> air-drawing ->
+    HUD. Returns the frame to display.
+
+    Design note: the retro face effect, its "MODE WxH" box, and the
+    ROLL/PITCH/YAW readout are only active *while the two-hand L-gesture is
+    engaged* — this is a "compose the shot" mode, not a permanent filter.
+    Outside of it, RETROLENS is just the live color feed with hand
+    tracking and the standard HUD chrome.
+    """
     height, width = frame.shape[:2]
     drawing_canvas.resize(width, height)
 
@@ -229,49 +247,64 @@ def _process_frame(
     hands_px = hand_tracker.get_landmarks_px(hand_result, width, height)
     face_landmarks_px = face_tracker.get_landmarks_px(face_result, width, height)
 
-    # --- Face effect (ROI only) -----------------------------------------
-    roll = pitch = yaw = None
-    face_box = None
-    if face_landmarks_px:
-        face_box = face_tracker.get_bounding_box(face_landmarks_px, width, height, config.FACE_ROI_MARGIN)
-        pose = pose_estimator.estimate(face_landmarks_px, width, height)
-        if pose is not None:
-            roll, pitch, yaw = pose
-
-        x1, y1, x2, y2 = face_box
-        if (x2 - x1) > config.MIN_ROI_SIZE and (y2 - y1) > config.MIN_ROI_SIZE:
-            roi = frame[y1:y2, x1:x2]
-            if roi.size > 0:
-                frame[y1:y2, x1:x2] = apply_effect(roi, mode, t)
-    else:
-        pose_estimator.reset()
-
-    # --- Hand landmark visualization ------------------------------------
-    hand_tracker.draw_landmarks(frame, hands_px)
-
-    # --- Air drawing gesture ---------------------------------------------
-    drawing_active = False
-    for hand in hands_px:
-        if is_drawing_gesture(hand, config.FINGER_EXTENSION_THRESHOLD, config.THUMB_EXTENSION_THRESHOLD, config.DRAWING_FOLDED_FINGERS_REQUIRED):
-            tip = hand[INDEX_TIP]
-            drawing_canvas.add_point(tip[0], tip[1])
-            drawing_active = True
-            break
-    if not drawing_active:
-        drawing_canvas.reset_stroke()
-
-    frame = composite_drawing(frame, drawing_canvas.layer, config.DRAWING_GLOW_LARGE_SIGMA, config.DRAWING_GLOW_SMALL_SIGMA)
-
-    # Snapshot for saving *before* any HUD chrome is drawn on top.
-    clean_frame = frame.copy()
-
-    # --- Two-hand framing gesture + countdown -----------------------------
+    # --- Two-hand "L" frame gesture + countdown ---------------------------
     gesture_result = detect_frame_gesture(
         hands_px, width, height,
         config.MIN_FRAME_WIDTH_RATIO, config.MIN_FRAME_HEIGHT_RATIO,
         config.MIN_FRAME_ASPECT, config.MAX_FRAME_ASPECT,
+        config.FINGER_EXTENSION_THRESHOLD, config.THUMB_EXTENSION_THRESHOLD,
     )
     remaining = countdown.update(gesture_result.valid, t)
+    countdown_running = remaining is not None
+    is_final_second = countdown_running and remaining <= config.COUNTDOWN_FINAL_SECOND
+    accent_color = config.FINAL_SECOND_COLOR if is_final_second else config.ACCENT_COLOR
+
+    # --- Head pose: only computed/shown while composing a shot ------------
+    roll = pitch = yaw = None
+    if countdown_running and face_landmarks_px:
+        pose = pose_estimator.estimate(face_landmarks_px, width, height)
+        if pose is not None:
+            roll, pitch, yaw = pose
+    if not countdown_running:
+        pose_estimator.reset()
+
+    # --- Retro effect: applied to the gesture-derived box, same window ----
+    if gesture_result.valid:
+        xs = (gesture_result.top_left[0], gesture_result.top_right[0], gesture_result.bottom_left[0], gesture_result.bottom_right[0])
+        ys = (gesture_result.top_left[1], gesture_result.top_right[1], gesture_result.bottom_left[1], gesture_result.bottom_right[1])
+        gx1, gy1 = clamp_point(int(min(xs)), int(min(ys)), width, height)
+        gx2, gy2 = clamp_point(int(max(xs)), int(max(ys)), width, height)
+        if (gx2 - gx1) > config.MIN_ROI_SIZE and (gy2 - gy1) > config.MIN_ROI_SIZE:
+            roi = frame[gy1:gy2, gx1:gx2]
+            if roi.size > 0:
+                frame[gy1:gy2, gx1:gx2] = apply_effect(roi, mode, t)
+
+    # --- Hand landmark visualization ---------------------------------------
+    hand_tracker.draw_landmarks(frame, hands_px)
+
+    # --- Air drawing: hold-to-charge, then a live neon trail ---------------
+    drawing_hand = None
+    for hand in hands_px:
+        if is_drawing_gesture(hand, config.FINGER_EXTENSION_THRESHOLD, config.THUMB_EXTENSION_THRESHOLD, config.DRAWING_FOLDED_FINGERS_REQUIRED):
+            drawing_hand = hand
+            break
+
+    charge_progress = draw_charge.update(drawing_hand is not None, t)
+    drawing_active = draw_charge.charged and drawing_hand is not None
+    if drawing_active:
+        tip = drawing_hand[INDEX_TIP]
+        drawing_canvas.add_point(tip[0], tip[1])
+    else:
+        drawing_canvas.reset_stroke()
+
+    frame = composite_drawing(
+        frame, drawing_canvas.layer, config.DRAWING_GLOW_LARGE_SIGMA, config.DRAWING_GLOW_SMALL_SIGMA,
+        tip=drawing_canvas.current_tip if drawing_active else None,
+        tip_color=config.DRAWING_TIP_COLOR,
+    )
+
+    # Snapshot for saving *before* any HUD chrome is drawn on top.
+    clean_frame = frame.copy()
 
     if countdown.triggered:
         photo_frame = clean_frame.copy()
@@ -281,39 +314,62 @@ def _process_frame(
         if saved_path:
             print(f"[RETROLENS] Photo saved: {saved_path.name}")
 
-    show_capture_text = photo_capture.consume_capture_text()
+    # --- Gesture box decoration + big countdown number ---------------------
     if gesture_result.valid:
-        ui.draw_virtual_frame(frame, gesture_result, config.FRAME_GESTURE_COLOR)
-    if remaining is not None or show_capture_text:
-        ui.draw_countdown(frame, remaining, gesture_result, show_capture_text, config.FRAME_GESTURE_COLOR)
+        ui.draw_gesture_box(
+            frame, gesture_result.top_left, gesture_result.top_right,
+            gesture_result.bottom_left, gesture_result.bottom_right,
+            mode, accent_color, config.CYAN_COLOR,
+        )
 
+    show_capture_text = photo_capture.consume_capture_text()
+    if gesture_result.valid and (remaining is not None) and (remaining > 0 or show_capture_text):
+        centroid = (
+            (gesture_result.top_left[0] + gesture_result.top_right[0] + gesture_result.bottom_left[0] + gesture_result.bottom_right[0]) / 4,
+            (gesture_result.top_left[1] + gesture_result.top_right[1] + gesture_result.bottom_left[1] + gesture_result.bottom_right[1]) / 4,
+        )
+        text = "CAPTURE" if show_capture_text else str(max(1, math.ceil(remaining)))
+        ui.draw_countdown_number(frame, text, centroid, accent_color)
+
+    # --- Draw-mode "hold to activate" charge ring ---------------------------
+    if drawing_hand is not None and not draw_charge.charged:
+        tip_pt = (int(drawing_hand[INDEX_TIP][0]), int(drawing_hand[INDEX_TIP][1]))
+        ui.draw_charge_ring(frame, tip_pt, charge_progress, config.CYAN_COLOR, config.TEXT_COLOR)
+
+    # --- Photo flash ----------------------------------------------------------
     flash_intensity = photo_capture.consume_flash()
     if flash_intensity > 0:
         frame = ui.apply_flash(frame, flash_intensity)
 
-    # --- Static HUD chrome --------------------------------------------------
-    if config.GLOBAL_VIGNETTE:
-        frame = ui.apply_global_vignette(frame, config.GLOBAL_VIGNETTE_STRENGTH)
-
+    # --- Static HUD chrome ------------------------------------------------------
     ui.draw_crosshair(frame, config.DIM_TEXT_COLOR)
     ui.draw_rec_indicator(frame, t, config.REC_COLOR, config.TEXT_COLOR)
     ui.draw_timestamp(frame, config.TEXT_COLOR)
-    if face_box is not None:
-        ui.draw_roi_label(frame, face_box, mode, config.ACCENT_COLOR)
-    ui.draw_bottom_hud(
-        frame, config.HUD_LABEL, mode, fps, photo_capture.count,
-        roll, pitch, yaw, config.ACCENT_COLOR, config.TEXT_COLOR, config.DIM_TEXT_COLOR,
-    )
+
+    main_label = config.HUD_LABEL_DRAWING if drawing_canvas.has_content else config.HUD_LABEL_IDLE
+    secondary_line = None
+    if not countdown_running:
+        if drawing_hand is not None:
+            state_word = "GAMBAR" if drawing_active else "SIAP"
+            secondary_line = f"{state_word}  GORESAN {drawing_canvas.stroke_count}"
+        else:
+            secondary_line = config.HINT_TEXT
+    ui.draw_bottom_left(frame, main_label, mode, fps, photo_capture.count, secondary_line, config.TEXT_COLOR)
+
+    if countdown_running:
+        ui.draw_pose_readout(frame, roll, pitch, yaw, accent_color)
 
     if debug_mode:
         lines = _build_debug_lines(
             hands_count=len(hands_px),
-            face_detected=face_landmarks_px is not None,
             fps=fps,
             mode=mode,
-            drawing_active=drawing_active,
-            frame_gesture_valid=gesture_result.valid,
+            gesture_valid=gesture_result.valid,
             countdown_remaining=remaining,
+            drawing_hand_present=drawing_hand is not None,
+            charge_progress=charge_progress,
+            drawing_active=drawing_active,
+            stroke_count=drawing_canvas.stroke_count,
             roll=roll, pitch=pitch, yaw=yaw,
         )
         ui.draw_debug_overlay(frame, lines, config.ACCENT_COLOR, config.TEXT_COLOR)

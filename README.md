@@ -13,18 +13,29 @@ retro electronic camera + experimental computer vision
 
 - Live webcam feed in a native OpenCV window, mirrored like a selfie camera
 - MediaPipe hand tracking (up to 2 hands, 21-point landmarks) with a subtle
-  retro landmark overlay
-- MediaPipe face tracking with a face-only region of interest (the rest of
-  the frame is never touched by the retro effects)
-- Real-time head pose estimation (ROLL / PITCH / YAW) via `solvePnP`
-- Three retro face treatments: **MONO** (CLAHE monochrome), **KONTRAS**
-  (punchy LUT-based contrast), **FILM** (grain, flicker, scanlines, vignette)
-- Two-hand "photo frame" gesture with a 3-second countdown and automatic
-  photo capture
-- Air drawing: point your index finger and paint a glowing neon trail that
-  stays on screen until you clear it
-- Compact camera-style HUD: REC indicator, timestamp, FPS, mode, photo
-  counter, crosshair, debug overlay
+  retro landmark overlay, always on
+- A two-hand **"L" frame gesture** that puts RETROLENS into shot-composing
+  mode: form an L with each hand (thumb + index extended), bring them
+  together, then pull apart to size a frame. While that frame is held, the
+  retro face effect, its glowing box, and the head-pose readout are all
+  active — drop your hands and it's back to the plain live feed. It's a
+  deliberate "compose the shot" mode, not a permanent filter.
+- Three retro treatments applied inside that frame: **MONO** (CLAHE
+  monochrome), **KONTRAS** (punchy LUT-based contrast), **FILM** (grain,
+  flicker, scanlines, vignette)
+- 3-second countdown with automatic photo capture — hold the frame through
+  a capture and it keeps shooting again every 3 seconds for as long as you
+  hold it; the box and countdown flash magenta for the final second as a
+  "get ready" cue
+- Real-time head pose estimation (ROLL / PITCH / YAW) via `solvePnP`,
+  shown while the frame is held
+- Air drawing: point your index finger and hold it — a small ring fills in
+  around your fingertip ("MODE GAMBAR"), and once it completes, a glowing
+  neon trail follows your finger with a bright hot-tip. The trail stays on
+  screen until you clear it.
+- Retro glitch-style HUD: REC indicator, timestamp, FPS, mode, photo
+  counter, and an on-screen hint, all rendered with a cyan/magenta
+  chromatic-aberration fringe, floating directly over the video (no panels)
 - A sequential photo counter and auto-created `captures/` folder
 
 ## Requirements
@@ -88,27 +99,33 @@ pressing `ESC`.
 
 ## Gestures
 
-**Two-hand frame → automatic photo**
+**"L" frame → automatic photo**
 
 ```
-left index ------------------- right index
+BENTUK 'L' DUA TANGAN, SATUKAN, LALU TARIK
+(form an 'L' with both hands, bring together, then pull apart)
+
+left index ------------------- right index      <- top edge
      |                              |
-     |         hold steady          |
+     |            FRAME             |
      |                              |
-left thumb ------------------- right thumb
+left thumb ------------------- right thumb      <- bottom edge
 ```
 
-Hold both hands up so your index fingers form the top corners and your
-thumbs form the bottom corners of a rectangle, like framing a shot. Hold it
-steady for 3 seconds — a cyan virtual frame appears, a countdown (3, 2, 1)
-counts down inside it, and a photo is captured automatically with a brief
-flash. Drop the gesture early and the countdown cancels; nothing is saved.
+Form an L-shape with each hand — thumb and index extended, other fingers
+folded — then hold both hands up so your index fingers form the top
+corners and your thumbs form the bottom corners of a frame. Hold it steady
+for 3 seconds: the frame lights up amber with corner markers, a countdown
+(3, 2, 1) counts down inside it turning magenta on the final second, and a
+photo is captured with a flash. Keep holding and it fires again every 3
+seconds; drop the gesture and the countdown cancels — nothing is saved.
 
 **Index-finger air drawing**
 
-Extend your index finger with your other fingers folded and move it in
-front of the camera — a glowing cyan trail follows your fingertip. Lift the
-gesture and the trail stays put; press `C` (or `R`) to clear it.
+Extend just your index finger (other fingers folded) and hold still for
+a moment — a ring fills in around your fingertip. Once it completes, move
+your finger and a glowing neon trail follows it. Lift the gesture and the
+trail stays put; press `C` (or `R`) to clear it.
 
 ## Photos
 
@@ -136,13 +153,13 @@ retrolens/
 ├── config.py            all tunable constants
 ├── camera.py             webcam wrapper
 ├── hand_tracker.py       MediaPipe hand landmarks + retro visualization
-├── face_tracker.py       MediaPipe face landmarks + ROI/bounding box
+├── face_tracker.py       MediaPipe face landmarks + bounding box
 ├── pose_estimator.py     head pose (roll/pitch/yaw) via solvePnP
-├── gesture_detector.py   finger-extension, drawing gesture, frame gesture
-├── effects.py             MONO / KONTRAS / FILM face treatments
+├── gesture_detector.py   finger-extension, L-shape, frame gesture, countdown
+├── effects.py             MONO / KONTRAS / FILM treatments (abu/ke_bgr/m_*)
 ├── drawing.py             air-drawing canvas + neon glow compositing
 ├── capture.py             photo saving, numbering, flash state
-├── ui.py                  HUD rendering (REC, timestamp, HUD, countdown...)
+├── ui.py                  HUD rendering (glitch text, gesture box, HUD...)
 ├── utils.py               geometry/smoothing helpers + model downloader
 ├── requirements.txt
 ├── README.md
@@ -178,10 +195,16 @@ work).
 runs entirely on CPU by design (no GPU/CUDA required), so performance
 scales with resolution and how much your machine has running alongside it.
 
-**Frame gesture won't trigger** — it needs both hands clearly visible, index
-fingers above thumbs, left hand on the left / right hand on the right, and
-a reasonably sized rectangle. Turn on debug mode (`D`) to watch
+**Frame gesture won't trigger** — each hand needs to clearly form an L
+(thumb *and* index extended, other three fingers folded), index fingers
+above thumbs, left hand on the left / right hand on the right, and a
+reasonably sized frame. Turn on debug mode (`D`) to watch
 `Frame Gesture: TRUE/false` update live while you adjust your hands.
+
+**Drawing won't start** — hold the pointing pose (index out, others folded)
+steady for a moment; the ring around your fingertip needs to fill
+completely before the trail begins. This is deliberate, so a passing
+finger doesn't leave accidental marks.
 
 **Drawing trail feels laggy or jittery** — tune `DRAWING_SMOOTHING` in
 `config.py`; higher values track your finger more directly, lower values

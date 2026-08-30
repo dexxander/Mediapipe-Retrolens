@@ -68,13 +68,16 @@ FINGER_EXTENSION_THRESHOLD = 0.16
 THUMB_EXTENSION_THRESHOLD = 0.09
 DRAWING_FOLDED_FINGERS_REQUIRED = 2   # of {middle, ring, pinky} must be folded
 
-MIN_FRAME_WIDTH_RATIO = 0.12    # virtual frame must span at least this
+MIN_FRAME_WIDTH_RATIO = 0.12    # gesture-derived frame must span at least this
 MIN_FRAME_HEIGHT_RATIO = 0.10   # fraction of the camera frame
 MIN_FRAME_ASPECT = 0.3
 MAX_FRAME_ASPECT = 4.0
 
 COUNTDOWN_SECONDS = 3.0
 GESTURE_MISS_TOLERANCE_FRAMES = 5     # brief dropout grace before cancelling
+COUNTDOWN_FINAL_SECOND = 1.0          # remaining <= this -> box/number turn magenta
+
+DRAW_CHARGE_SECONDS = 0.6       # how long to hold the pointing pose before drawing activates
 
 # --------------------------------------------------------------------------
 # Air drawing
@@ -84,26 +87,29 @@ DRAWING_THICKNESS = 4
 DRAWING_COLOR = (255, 255, 0)   # cyan, BGR
 DRAWING_GLOW_LARGE_SIGMA = 18
 DRAWING_GLOW_SMALL_SIGMA = 6
+DRAWING_TIP_COLOR = (255, 255, 255)  # bright hot-white pen-tip highlight
 
 # --------------------------------------------------------------------------
 # Photo capture
 # --------------------------------------------------------------------------
 FLASH_DURATION_FRAMES = 6
-CAPTURE_HOLD_FRAMES = 10        # how long "CAPTURE" text stays on screen
+CAPTURE_TEXT_FRAMES = 10        # how long "CAPTURE" text stays on screen
 BURN_IN_TIMESTAMP = True        # stamp saved photos with date/time
 
 # --------------------------------------------------------------------------
 # UI / HUD
 # --------------------------------------------------------------------------
-HUD_LABEL = "Lensa"
+HUD_LABEL_IDLE = "LENSA"        # main status label before any drawing exists
+HUD_LABEL_DRAWING = "GAMBAR"    # main status label once the canvas has content
 FPS_SMOOTHING = 0.9
 DEBUG_DEFAULT = False
-GLOBAL_VIGNETTE = True
-GLOBAL_VIGNETTE_STRENGTH = 0.35
 
-ACCENT_COLOR = (255, 230, 60)   # cyan/electric-blue accent, BGR
-REC_COLOR = (40, 40, 255)       # red, BGR
-TEXT_COLOR = (235, 235, 235)    # near-white
+HINT_TEXT = "BENTUK 'L' DUA TANGAN, SATUKAN, LALU TARIK"
+
+ACCENT_COLOR = (0, 165, 255)        # amber/orange, BGR - gesture box, pose readout, ROI label
+FINAL_SECOND_COLOR = (180, 20, 255)  # magenta/pink, BGR - final countdown second
+CYAN_COLOR = (255, 255, 0)          # cyan, BGR - corner dots, box outline, charge ring
+REC_COLOR = (40, 40, 255)           # red, BGR
+TEXT_COLOR = (245, 245, 245)        # near-white
 DIM_TEXT_COLOR = (160, 160, 160)
-WARN_COLOR = (0, 165, 255)      # amber, BGR
-FRAME_GESTURE_COLOR = (255, 240, 60)  # virtual frame lines, BGR
+WARN_COLOR = (0, 165, 255)          # amber, BGR (saved-photo timestamp)
