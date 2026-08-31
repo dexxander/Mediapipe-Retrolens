@@ -5,10 +5,10 @@ The three retro face treatments applied to the face ROI only — never the
 whole frame. These stages stay separate so the live render loop can reuse
 cached work.
 
-    abu       -> BGR to grayscale
-    ke_bgr    -> grayscale back to 3-channel BGR
+    to_gray   -> BGR to grayscale
+    gray_to_bgr -> grayscale back to 3-channel BGR
     m_mono    -> CLAHE-enhanced monochrome
-    m_kontras -> punchy S-curve contrast via a LUT
+    m_contrast -> punchy S-curve contrast via a LUT
     m_film    -> desaturated + grain + flicker + scanlines/vignette
 
 All three share one CLAHE instance and cache their expensive-to-build
@@ -27,7 +27,7 @@ import numpy as np
 import config
 
 MODE_MONO = "MONO"
-MODE_KONTRAS = "CONTRAST"
+MODE_CONTRAST = "CONTRAST"
 MODE_FILM = "FILM"
 
 _clahe = cv2.createCLAHE(
@@ -36,12 +36,12 @@ _clahe = cv2.createCLAHE(
 )
 
 
-def abu(roi: np.ndarray) -> np.ndarray:
+def to_gray(roi: np.ndarray) -> np.ndarray:
     """Convert a BGR ROI to single-channel grayscale."""
     return cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
 
 
-def ke_bgr(gray: np.ndarray) -> np.ndarray:
+def gray_to_bgr(gray: np.ndarray) -> np.ndarray:
     """Convert a single-channel grayscale image back to 3-channel BGR."""
     return cv2.cvtColor(gray, cv2.COLOR_GRAY2BGR)
 
@@ -51,13 +51,13 @@ def ke_bgr(gray: np.ndarray) -> np.ndarray:
 # --------------------------------------------------------------------------
 def m_mono(roi: np.ndarray, t: float) -> np.ndarray:
     """CLAHE-enhanced monochrome."""
-    return ke_bgr(_clahe.apply(abu(roi)))
+    return gray_to_bgr(_clahe.apply(to_gray(roi)))
 
 
 # --------------------------------------------------------------------------
 # CONTRAST (LUT-based S-curve contrast)
 # --------------------------------------------------------------------------
-_kontras_lut_cache: Dict[float, np.ndarray] = {}
+_contrast_lut_cache: Dict[float, np.ndarray] = {}
 
 
 def _build_contrast_lut(intensity: float) -> np.ndarray:
@@ -66,16 +66,16 @@ def _build_contrast_lut(intensity: float) -> np.ndarray:
     return np.clip(curve, 0, 255).astype(np.uint8)
 
 
-def m_kontras(roi: np.ndarray, t: float, intensity: float = config.CONTRAST_INTENSITY) -> np.ndarray:
+def m_contrast(roi: np.ndarray, t: float, intensity: float = config.CONTRAST_INTENSITY) -> np.ndarray:
     """Dramatic S-curve contrast, applied via a cached lookup table."""
-    gray = abu(roi)
+    gray = to_gray(roi)
     gray = _clahe.apply(gray)
-    lut = _kontras_lut_cache.get(intensity)
+    lut = _contrast_lut_cache.get(intensity)
     if lut is None:
         lut = _build_contrast_lut(intensity)
-        _kontras_lut_cache[intensity] = lut
+        _contrast_lut_cache[intensity] = lut
     gray = cv2.LUT(gray, lut)
-    return ke_bgr(gray)
+    return gray_to_bgr(gray)
 
 
 # --------------------------------------------------------------------------
@@ -115,7 +115,7 @@ def _apply_vignette(gray_f: np.ndarray) -> np.ndarray:
 
 def m_film(roi: np.ndarray, t: float, grain_strength: int = config.GRAIN_STRENGTH) -> np.ndarray:
     """Analog-film look: grayscale + CLAHE + grain + subtle flicker + optional scanlines/vignette."""
-    gray = abu(roi)
+    gray = to_gray(roi)
     gray = _clahe.apply(gray)
     h, w = gray.shape
 
@@ -130,7 +130,7 @@ def m_film(roi: np.ndarray, t: float, grain_strength: int = config.GRAIN_STRENGT
     gray_f = gray_f + stack[grain_index]
 
     gray_u8 = np.clip(gray_f, 0, 255).astype(np.uint8)
-    bgr = ke_bgr(gray_u8)
+    bgr = gray_to_bgr(gray_u8)
 
     if config.FILM_SCANLINES:
         bgr[::3, :, :] = (bgr[::3, :, :].astype(np.float32) * 0.82).astype(np.uint8)
@@ -143,8 +143,8 @@ def m_film(roi: np.ndarray, t: float, grain_strength: int = config.GRAIN_STRENGT
 # --------------------------------------------------------------------------
 def apply_effect(roi: np.ndarray, mode: str, t: float) -> np.ndarray:
     """Route to the active effect function. Falls back to MONO for an unknown mode."""
-    if mode == MODE_KONTRAS:
-        return m_kontras(roi, t)
+    if mode == MODE_CONTRAST:
+        return m_contrast(roi, t)
     if mode == MODE_FILM:
         return m_film(roi, t)
     return m_mono(roi, t)

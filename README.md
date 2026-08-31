@@ -140,6 +140,11 @@ preview remains at `FRAME_WIDTH` / `FRAME_HEIGHT`, while MediaPipe uses
 `TRACKING_WIDTH` / `TRACKING_HEIGHT` for faster detection. Lower the tracking
 resolution first if the app feels sluggish.
 
+The default profile is designed for laptops with 8 GB RAM and integrated or
+entry-level graphics: a 960×540 preview, 480×270 tracking, 30 FPS camera
+capture, CPU-limited OpenCV work, and throttled face/pose updates. The app uses
+the CPU for MediaPipe, so the graphics card does not need CUDA support.
+
 ## Project structure
 
 ```

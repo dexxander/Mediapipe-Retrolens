@@ -26,7 +26,7 @@ import ui
 from camera import Camera, CameraError
 from capture import PhotoCapture
 from drawing import DrawingCanvas, composite_drawing
-from effects import MODE_FILM, MODE_KONTRAS, MODE_MONO, apply_effect
+from effects import MODE_CONTRAST, MODE_FILM, MODE_MONO, apply_effect
 from face_tracker import FaceTracker
 from gesture_detector import (
     INDEX_TIP,
@@ -99,6 +99,7 @@ def _build_debug_lines(
 def main() -> None:
     print("RETROLENS")
     print("initializing...")
+    cv2.setNumThreads(config.OPENCV_THREADS)
 
     # --- Phase 1: camera -----------------------------------------------
     try:
@@ -187,7 +188,7 @@ def main() -> None:
             elif key in (ord("m"), ord("M")):
                 mode = MODE_MONO
             elif key in (ord("k"), ord("K")):
-                mode = MODE_KONTRAS
+                mode = MODE_CONTRAST
             elif key in (ord("f"), ord("F")):
                 mode = MODE_FILM
             elif key in (ord("d"), ord("D")):
@@ -269,7 +270,7 @@ def _process_frame(
     # model on idle frames is the second major CPU saving.
     face_landmarks_px = None
     if gesture_result.valid:
-        face_result = face_tracker.process(frame_rgb, t)
+        face_result = face_tracker.process_throttled(frame_rgb, t, config.FACE_UPDATE_INTERVAL)
         face_small = face_tracker.get_landmarks_px(face_result, tracking_width, tracking_height)
         if face_small:
             face_landmarks_px = [(x * scale_x, y * scale_y) for x, y in face_small]
@@ -277,11 +278,14 @@ def _process_frame(
     # --- Head pose: only computed/shown while composing a shot ------------
     roll = pitch = yaw = None
     if countdown_running and face_landmarks_px:
-        pose = pose_estimator.estimate(face_landmarks_px, width, height)
+        pose = pose_estimator.estimate_throttled(
+            face_landmarks_px, width, height, config.POSE_UPDATE_INTERVAL
+        )
         if pose is not None:
             roll, pitch, yaw = pose
     if not countdown_running:
         pose_estimator.reset()
+        face_tracker.reset_tracking()
 
     # --- Retro effect: applied to the gesture-derived box, same window ----
     if gesture_result.valid:
@@ -292,7 +296,13 @@ def _process_frame(
         if (gx2 - gx1) > config.MIN_ROI_SIZE and (gy2 - gy1) > config.MIN_ROI_SIZE:
             roi = frame[gy1:gy2, gx1:gx2]
             if roi.size > 0:
-                filtered = apply_effect(roi, mode, t)
+                effect_roi = roi
+                if roi.shape[1] > config.EFFECT_MAX_WIDTH:
+                    effect_height = max(1, int(roi.shape[0] * config.EFFECT_MAX_WIDTH / roi.shape[1]))
+                    effect_roi = cv2.resize(roi, (config.EFFECT_MAX_WIDTH, effect_height), interpolation=cv2.INTER_AREA)
+                filtered = apply_effect(effect_roi, mode, t)
+                if filtered.shape[:2] != roi.shape[:2]:
+                    filtered = cv2.resize(filtered, (roi.shape[1], roi.shape[0]), interpolation=cv2.INTER_LINEAR)
                 polygon = np.array([
                     [int(p[0] - gx1), int(p[1] - gy1)] for p in (
                         gesture_result.top_left, gesture_result.top_right,
@@ -333,6 +343,8 @@ def _process_frame(
         frame, drawing_canvas.layer, config.DRAWING_GLOW_LARGE_SIGMA, config.DRAWING_GLOW_SMALL_SIGMA,
         tip=drawing_canvas.current_tip if drawing_active else None,
         tip_color=config.DRAWING_TIP_COLOR,
+        cached_glow=drawing_canvas.glow(config.DRAWING_GLOW_LARGE_SIGMA, config.DRAWING_GLOW_SMALL_SIGMA)
+        if drawing_canvas.has_content else None,
     )
 
     # Snapshot for saving *before* any HUD chrome is drawn on top.

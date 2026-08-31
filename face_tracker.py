@@ -49,12 +49,25 @@ class FaceTracker:
         )
         self._landmarker = vision.FaceLandmarker.create_from_options(options)
         self._clock = MonotonicMsClock()
+        self._frame_index = 0
+        self._last_result = None
 
     def process(self, frame_rgb: np.ndarray, elapsed_seconds: float):
         """Runs face landmark detection on an RGB frame. Returns a FaceLandmarkerResult."""
         mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=frame_rgb)
         timestamp_ms = self._clock.next_ms(elapsed_seconds)
         return self._landmarker.detect_for_video(mp_image, timestamp_ms)
+
+    def process_throttled(self, frame_rgb: np.ndarray, elapsed_seconds: float, interval: int = 2):
+        """Reuse the last face result between updates to reduce CPU load."""
+        self._frame_index += 1
+        if self._last_result is None or self._frame_index % max(1, interval) == 0:
+            self._last_result = self.process(frame_rgb, elapsed_seconds)
+        return self._last_result
+
+    def reset_tracking(self) -> None:
+        self._frame_index = 0
+        self._last_result = None
 
     @staticmethod
     def get_landmarks_px(result, width: int, height: int) -> Optional[List[Point]]:

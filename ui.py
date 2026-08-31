@@ -104,7 +104,7 @@ def draw_timestamp(frame: np.ndarray, color: Tuple[int, int, int]) -> None:
 
 
 # --------------------------------------------------------------------------
-# Bottom-left status (label|mode|fps|foto) + optional secondary hint/status
+# Bottom-left status (label|mode|fps|photo) + optional secondary hint/status
 # line above it, bottom-right head-pose readout. No background panel —
 # text floats directly on the live video, matching the reference.
 # --------------------------------------------------------------------------
@@ -120,7 +120,7 @@ def draw_bottom_left(
     h, w = frame.shape[:2]
     margin = 16
     main_y = h - margin
-    status = f"{label}|{mode}|FPS {fps:.0f}|FOTO {photo_count}"
+    status = f"{label}|{mode}|FPS {fps:.0f}|PHOTO {photo_count}"
     if secondary_line:
         _glitch_text(frame, secondary_line, (margin, main_y - 26), 0.55, text_color, 1)
     _glitch_text(frame, status, (margin, main_y), 0.65, text_color, 2)

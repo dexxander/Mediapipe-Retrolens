@@ -18,6 +18,8 @@ from typing import Optional
 import cv2
 import numpy as np
 
+import config
+
 
 class CameraError(Exception):
     """Raised when the webcam cannot be opened or stops delivering frames."""
@@ -39,6 +41,8 @@ class Camera:
         # Ask for the desired resolution, but never assume the driver honored it.
         self._cap.set(cv2.CAP_PROP_FRAME_WIDTH, requested_width)
         self._cap.set(cv2.CAP_PROP_FRAME_HEIGHT, requested_height)
+        self._cap.set(cv2.CAP_PROP_FPS, config.CAMERA_FPS)
+        self._cap.set(cv2.CAP_PROP_BUFFERSIZE, config.CAMERA_BUFFER_SIZE)
 
         actual_width = int(self._cap.get(cv2.CAP_PROP_FRAME_WIDTH)) or requested_width
         actual_height = int(self._cap.get(cv2.CAP_PROP_FRAME_HEIGHT)) or requested_height

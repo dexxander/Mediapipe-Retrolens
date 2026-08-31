@@ -21,12 +21,15 @@ MODELS_DIR = PROJECT_ROOT / "assets" / "models"
 # Camera
 # --------------------------------------------------------------------------
 CAMERA_INDEX = 0
-FRAME_WIDTH = 1280
-FRAME_HEIGHT = 720
+FRAME_WIDTH = 960
+FRAME_HEIGHT = 540
 # MediaPipe can work on a smaller copy while the camera preview stays sharp.
 # This is the main performance knob for lower-powered CPUs.
-TRACKING_WIDTH = 640
-TRACKING_HEIGHT = 360
+TRACKING_WIDTH = 480
+TRACKING_HEIGHT = 270
+CAMERA_FPS = 30
+CAMERA_BUFFER_SIZE = 1
+OPENCV_THREADS = 2
 
 # --------------------------------------------------------------------------
 # MediaPipe — hands
@@ -58,6 +61,9 @@ GRAIN_STRENGTH = 11             # std-dev of film grain noise (0-255 scale)
 GRAIN_FRAME_RATE = 18.0         # how many grain "frames" cycle per second
 FILM_SCANLINES = True           # scanlines drawn only inside FILM face ROI
 FILM_VIGNETTE = True            # soft vignette drawn only inside FILM face ROI
+EFFECT_MAX_WIDTH = 480          # process effects at a smaller size, then upscale
+FACE_UPDATE_INTERVAL = 2        # run face inference every N valid gesture frames
+POSE_UPDATE_INTERVAL = 2        # solve head pose every N valid gesture frames
 
 # --------------------------------------------------------------------------
 # Head pose estimation

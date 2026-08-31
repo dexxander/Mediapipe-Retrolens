@@ -38,6 +38,7 @@ class DrawingCanvas:
         self._previous_point: Optional[Tuple[int, int]] = None
         self._smoothed_point: Optional[Point] = None
         self.stroke_count = 0  # Running count of segments drawn since the last clear.
+        self._glow_cache = {}
 
     def resize(self, width: int, height: int) -> None:
         """Reallocate (and clear) the canvas if the camera resolution changes."""
@@ -45,6 +46,7 @@ class DrawingCanvas:
             return
         self.width, self.height = width, height
         self.layer = np.zeros((height, width, 3), dtype=np.uint8)
+        self._glow_cache = {}
         self.reset_stroke()
 
     def add_point(self, x: float, y: float) -> None:
@@ -52,6 +54,7 @@ class DrawingCanvas:
         current_raw = (x, y)
         self._smoothed_point = smooth_point(current_raw, self._smoothed_point, self.smoothing)
         current = (int(self._smoothed_point[0]), int(self._smoothed_point[1]))
+        self._glow_cache = {}
 
         if self._previous_point is not None:
             cv2.line(self.layer, self._previous_point, current, self.color, self.thickness, cv2.LINE_AA)
@@ -65,6 +68,7 @@ class DrawingCanvas:
 
     def clear(self) -> None:
         self.layer[:] = 0
+        self._glow_cache = {}
         self.reset_stroke()
         self.stroke_count = 0
 
@@ -77,6 +81,18 @@ class DrawingCanvas:
         """The most recent point painted, for drawing a bright 'pen tip' highlight."""
         return self._previous_point
 
+    def glow(self, large_sigma: float, small_sigma: float) -> Tuple[np.ndarray, np.ndarray]:
+        """Return cached glow layers; blurring only when the trail changes."""
+        key = (large_sigma, small_sigma)
+        cached = self._glow_cache.get(key)
+        if cached is None:
+            cached = (
+                cv2.GaussianBlur(self.layer, (0, 0), sigmaX=large_sigma, sigmaY=large_sigma),
+                cv2.GaussianBlur(self.layer, (0, 0), sigmaX=small_sigma, sigmaY=small_sigma),
+            )
+            self._glow_cache[key] = cached
+        return cached
+
 
 def composite_drawing(
     base_frame: np.ndarray,
@@ -86,6 +102,7 @@ def composite_drawing(
     tip: Optional[Tuple[int, int]] = None,
     tip_color: Tuple[int, int, int] = (255, 255, 255),
     tip_radius: int = 5,
+    cached_glow: Optional[Tuple[np.ndarray, np.ndarray]] = None,
 ) -> np.ndarray:
     """
     Layer a soft outer glow, a tighter inner glow, and a sharp core line over
@@ -97,8 +114,11 @@ def composite_drawing(
     if not np.any(drawing_layer):
         return base_frame
 
-    glow_large = cv2.GaussianBlur(drawing_layer, (0, 0), sigmaX=large_sigma, sigmaY=large_sigma)
-    glow_small = cv2.GaussianBlur(drawing_layer, (0, 0), sigmaX=small_sigma, sigmaY=small_sigma)
+    if cached_glow is None:
+        glow_large = cv2.GaussianBlur(drawing_layer, (0, 0), sigmaX=large_sigma, sigmaY=large_sigma)
+        glow_small = cv2.GaussianBlur(drawing_layer, (0, 0), sigmaX=small_sigma, sigmaY=small_sigma)
+    else:
+        glow_large, glow_small = cached_glow
     glow = cv2.addWeighted(glow_large, 0.55, glow_small, 0.75, 0)
 
     out = cv2.addWeighted(base_frame, 1.0, glow, 0.85, 0)

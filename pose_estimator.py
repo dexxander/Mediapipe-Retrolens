@@ -86,9 +86,22 @@ class HeadPoseEstimator:
         self._roll: Optional[float] = None
         self._pitch: Optional[float] = None
         self._yaw: Optional[float] = None
+        self._frame_index = 0
+        self._last_pose: Optional[Tuple[float, float, float]] = None
 
     def reset(self) -> None:
         self._roll = self._pitch = self._yaw = None
+        self._frame_index = 0
+        self._last_pose = None
+
+    def estimate_throttled(
+        self, face_landmarks_px: Sequence[Point], frame_width: int, frame_height: int, interval: int = 2
+    ) -> Optional[Tuple[float, float, float]]:
+        """Reuse the last pose between solves; solvePnP need not run every frame."""
+        self._frame_index += 1
+        if self._last_pose is None or self._frame_index % max(1, interval) == 0:
+            self._last_pose = self.estimate(face_landmarks_px, frame_width, frame_height)
+        return self._last_pose
 
     def estimate(
         self,
